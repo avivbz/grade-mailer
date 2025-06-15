@@ -907,6 +907,12 @@
                 readExcelFile();
             }
         }
+
+        // Initialize status area on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus('🎯 מוכן לתחילת העבודה!\n');
+            updateStatus('📋 העלה קבצי PDF ואקסל כדי להתחיל...\n\n');
+        });
     </script>
 </body>
 </html>
