@@ -355,18 +355,37 @@
 
         // טיפול בהעלאת קבצי PDF
         document.getElementById('pdfFiles').addEventListener('change', function(e) {
-            pdfFiles = Array.from(e.target.files);
+            console.log('PDF files selected:', e.target.files);
+            const files = Array.from(e.target.files);
+            console.log('Filtered PDF files:', files);
+            
+            if (files.length === 0) {
+                updateStatus('❌ לא נבחרו קבצי PDF תקינים\n');
+                return;
+            }
+            
+            pdfFiles = files;
             updatePdfList();
             checkIfCanProcess();
             document.getElementById('step1').classList.add('active');
+            updateStatus(`✅ נבחרו ${files.length} קבצי PDF\n`);
         });
 
         // טיפול בהעלאת קובץ אקסל
         document.getElementById('excelFile').addEventListener('change', function(e) {
+            console.log('Excel file selected:', e.target.files[0]);
+            
+            if (!e.target.files[0]) {
+                updateStatus('❌ לא נבחר קובץ אקסל\n');
+                return;
+            }
+            
             excelFile = e.target.files[0];
             updateExcelInfo();
             checkIfCanProcess();
             document.getElementById('step2').classList.add('active');
+            updateStatus(`✅ נבחר קובץ אקסל: ${excelFile.name}\n`);
+            
             if (excelFile) {
                 readExcelFile();
             }
@@ -374,28 +393,40 @@
 
         function updatePdfList() {
             const listElement = document.getElementById('pdfList');
+            console.log('Updating PDF list, files count:', pdfFiles.length);
+            
             if (pdfFiles.length > 0) {
                 listElement.style.display = 'block';
                 listElement.innerHTML = '<strong>קבצי PDF שנבחרו:</strong><br>' + 
-                    pdfFiles.map(file => `<div class="file-item"><span class="file-icon">📄</span>${file.name}</div>`).join('');
+                    pdfFiles.map(file => `<div class="file-item"><span class="file-icon">📄</span>${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</div>`).join('');
                 
                 // עדכון אזור ההעלאה
                 const uploadArea = document.querySelector('#step1 .upload-area');
                 uploadArea.classList.add('active');
                 uploadArea.querySelector('.upload-text').textContent = `נבחרו ${pdfFiles.length} קבצים`;
+                updateStatus(`📄 רשימת קבצי PDF:\n${pdfFiles.map(f => `  - ${f.name}`).join('\n')}\n`);
+            } else {
+                listElement.style.display = 'none';
+                updateStatus('⚠️ לא נבחרו קבצי PDF\n');
             }
         }
 
         function updateExcelInfo() {
             const infoElement = document.getElementById('excelInfo');
+            console.log('Updating Excel info, file:', excelFile);
+            
             if (excelFile) {
                 infoElement.style.display = 'block';
-                infoElement.innerHTML = `<div class="file-item"><span class="file-icon">📊</span>${excelFile.name}</div>`;
+                infoElement.innerHTML = `<div class="file-item"><span class="file-icon">📊</span>${excelFile.name} (${(excelFile.size/1024/1024).toFixed(2)} MB)</div>`;
                 
                 // עדכון אזור ההעלאה
                 const uploadArea = document.querySelector('#step2 .upload-area');
                 uploadArea.classList.add('active');
                 uploadArea.querySelector('.upload-text').textContent = 'קובץ אקסל נבחר בהצלחה';
+                updateStatus(`📊 קובץ אקסל נבחר: ${excelFile.name}\n`);
+            } else {
+                infoElement.style.display = 'none';
+                updateStatus('⚠️ לא נבחר קובץ אקסל\n');
             }
         }
 
@@ -405,27 +436,71 @@
         }
 
         function readExcelFile() {
+            if (!excelFile) {
+                updateStatus('❌ אין קובץ אקסל לקריאה\n');
+                return;
+            }
+            
+            updateStatus('🔄 קורא קובץ אקסל...\n');
             const reader = new FileReader();
+            
             reader.onload = function(e) {
                 try {
+                    updateStatus('📊 מפענח נתוני אקסל...\n');
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, {type: 'array'});
+                    
+                    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                        throw new Error('הקובץ לא מכיל גיליונות עבודה');
+                    }
+                    
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
                     
+                    if (!jsonData || jsonData.length < 2) {
+                        throw new Error('הקובץ לא מכיל מספיק נתונים (צריך לפחות שורת כותרות ושורה אחת של נתונים)');
+                    }
+                    
+                    updateStatus(`📋 מצאתי ${jsonData.length - 1} שורות נתונים\n`);
+                    
                     // דילוג על שורת הכותרות
-                    studentsData = jsonData.slice(1).map(row => ({
-                        name: row[0] ? row[0].toString().trim() : '',
-                        email: row[1] ? row[1].toString().trim() : '',
-                        id: row[2] ? row[2].toString().trim() : ''
-                    })).filter(student => student.name && student.email);
+                    studentsData = jsonData.slice(1).map((row, index) => {
+                        const student = {
+                            name: row[0] ? row[0].toString().trim() : '',
+                            email: row[1] ? row[1].toString().trim() : '',
+                            id: row[2] ? row[2].toString().trim() : ''
+                        };
+                        
+                        console.log(`Student ${index + 1}:`, student);
+                        return student;
+                    }).filter(student => student.name && student.email);
 
-                    updateStatus(`✅ נקראו ${studentsData.length} תלמידים מקובץ האקסל`);
+                    updateStatus(`✅ נקראו ${studentsData.length} תלמידים תקינים מקובץ האקסל\n`);
+                    
+                    if (studentsData.length === 0) {
+                        updateStatus('❌ לא נמצאו תלמידים תקינים (בדוק שיש שם במידה A ומייל בעמודה B)\n');
+                    } else {
+                        updateStatus('👥 רשימת תלמידים:\n');
+                        studentsData.slice(0, 5).forEach(student => {
+                            updateStatus(`  - ${student.name} (${student.email})\n`);
+                        });
+                        if (studentsData.length > 5) {
+                            updateStatus(`  ... ועוד ${studentsData.length - 5} תלמידים\n`);
+                        }
+                    }
+                    
                     checkIfCanProcess();
                 } catch (error) {
-                    updateStatus(`❌ שגיאה בקריאת קובץ האקסל: ${error.message}`);
+                    console.error('Excel reading error:', error);
+                    updateStatus(`❌ שגיאה בקריאת קובץ האקסל: ${error.message}\n`);
+                    updateStatus('💡 וודא שהקובץ הוא .xlsx ושיש בו 3 עמודות: שם | מייל | ת"ז\n');
                 }
             };
+            
+            reader.onerror = function() {
+                updateStatus('❌ שגיאה בקריאת הקובץ\n');
+            };
+            
             reader.readAsArrayBuffer(excelFile);
         }
 
